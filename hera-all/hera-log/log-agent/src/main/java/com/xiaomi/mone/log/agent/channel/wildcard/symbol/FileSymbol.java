@@ -1,9 +1,6 @@
 package com.xiaomi.mone.log.agent.channel.wildcard.symbol;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 
 /**
  * @author wtt
@@ -15,8 +12,10 @@ import lombok.RequiredArgsConstructor;
 @NoArgsConstructor
 @RequiredArgsConstructor
 @Builder
+@Data
 public class FileSymbol {
     private String filePath;
     private String fileUniqueMark;
+    private Long lineNumber;
     private Long lastSendTime;
 }

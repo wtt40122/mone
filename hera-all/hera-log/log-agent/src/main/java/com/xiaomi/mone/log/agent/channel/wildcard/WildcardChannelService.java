@@ -103,12 +103,17 @@ public class WildcardChannelService implements ChannelService {
 
     private void listenFileChange() {
         for (Map.Entry<String, FileSymbol> entry : uniqueFileMap.entrySet()) {
-            if (!Objects.equals(entry.getValue(), fileUniqueMark.getFileUniqueMark(entry.getKey()))) {
-                //说明文件唯一标识变化了，从头开始读取
-                String ip = getFilepathIp().get(entry.getKey());
-                readFile(ip, entry.getKey(), channelDefine.getChannelId());
+            if (!Objects.equals(entry.getValue().getFileUniqueMark(), fileUniqueMark.getFileUniqueMark(entry.getKey()))) {
+                //说明文件唯一标识变化了,并且超过当前时间已经距离最后一次读取的时间超过1min
+                if (Instant.now().toEpochMilli() - entry.getValue().getLastSendTime() > 60 * 1000) {
+                    String ip = getFilepathIp().get(entry.getKey());
+                    readFile(ip, entry.getKey(), channelDefine.getChannelId());
+                }
+            } else {
+                //文件唯一标识没有变化，但是文件的大小变化了
+
             }
-            //文件唯一标识没有变化，但是文件的大小变化了
+
         }
     }
 
@@ -143,6 +148,7 @@ public class WildcardChannelService implements ChannelService {
         }
         //判断文件是否存在
         if (FileUtil.exist(filePath)) {
+            stopOldCurrentFileThread(filePath);
             log.info("start to collect file,fileName:{}", filePath);
             logFileMap.put(filePath, logFile);
             Future<?> future = ExecutorUtil.submit(() -> {
@@ -155,6 +161,17 @@ public class WildcardChannelService implements ChannelService {
             futureMap.put(filePath, future);
         } else {
             log.info("file not exist,file:{}", filePath);
+        }
+    }
+
+    private void stopOldCurrentFileThread(String filePath) {
+        LogFile logFile = logFileMap.get(filePath);
+        if (null != logFile) {
+            logFile.setStop(true);
+        }
+        Future future = futureMap.get(filePath);
+        if (null != future) {
+            future.cancel(false);
         }
     }
 
@@ -202,7 +219,7 @@ public class WildcardChannelService implements ChannelService {
                 log.info("empty data");
                 return;
             }
-            String ct = String.valueOf(System.currentTimeMillis());
+            long ct = System.currentTimeMillis();
             readResult.get().getLines().stream()
                     .forEach(l -> {
                         String logType = channelDefine.getInput().getType();
@@ -234,7 +251,7 @@ public class WildcardChannelService implements ChannelService {
                 if (null != remainMsg) {
                     synchronized (lock) {
                         log.info("start send last line,pattern:{},data:{}", filePath, remainMsg);
-                        wrapDataToSend(remainMsg, readResult, filePath, ip, String.valueOf(Instant.now().toEpochMilli()));
+                        wrapDataToSend(remainMsg, readResult, filePath, ip, Instant.now().toEpochMilli());
                     }
                 }
             }
@@ -242,7 +259,7 @@ public class WildcardChannelService implements ChannelService {
         return listener;
     }
 
-    private void wrapDataToSend(String lineMsg, AtomicReference<ReadResult> readResult, String filePath, String localIp, String ct) {
+    private void wrapDataToSend(String lineMsg, AtomicReference<ReadResult> readResult, String filePath, String localIp, Long ct) {
         LineMessage lineMessage = new LineMessage();
         lineMessage.setMsgBody(lineMsg);
         lineMessage.setPointer(readResult.get().getPointer());
@@ -250,7 +267,7 @@ public class WildcardChannelService implements ChannelService {
         lineMessage.setFileName(filePath);
         lineMessage.setProperties(LineMessage.KEY_MQ_TOPIC_TAG, this.channelDefine.getInput().getPatternCode());
         lineMessage.setProperties(LineMessage.KEY_IP, localIp);
-        lineMessage.setProperties(LineMessage.KEY_COLLECT_TIMESTAMP, ct);
+        lineMessage.setProperties(LineMessage.KEY_COLLECT_TIMESTAMP, ct.toString());
         String logType = channelDefine.getInput().getType();
         LogTypeEnum logTypeEnum = LogTypeEnum.name2enum(logType);
         if (null != logTypeEnum) {
@@ -273,6 +290,9 @@ public class WildcardChannelService implements ChannelService {
         fileProgress.setUnixFileNode(ChannelUtil.buildUnixFileNode(filePath));
         fileProgress.setPodType(channelDefine.getPodType());
         lineMessageList.add(lineMessage);
+
+        uniqueFileMap.get(filePath).setLastSendTime(ct);
+        uniqueFileMap.get(filePath).setLineNumber(readResult.get().getLineNumber());
 
         int batchSize = msgExporter.batchExportSize();
         if (lineMessageList.size() > batchSize) {
