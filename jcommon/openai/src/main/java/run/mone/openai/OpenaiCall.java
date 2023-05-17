@@ -5,16 +5,22 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.collect.Lists;
 import com.unfbx.chatgpt.OpenAiClient;
+import com.unfbx.chatgpt.OpenAiStreamClient;
 import com.unfbx.chatgpt.entity.chat.ChatCompletion;
 import com.unfbx.chatgpt.entity.chat.ChatCompletionResponse;
 import com.unfbx.chatgpt.entity.chat.Message;
+import com.unfbx.chatgpt.entity.edits.Edit;
+import com.unfbx.chatgpt.entity.edits.EditResponse;
 import com.unfbx.chatgpt.entity.embeddings.EmbeddingResponse;
 import com.unfbx.chatgpt.interceptor.OpenAILogger;
 import lombok.Builder;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.Response;
 import okhttp3.logging.HttpLoggingInterceptor;
+import okhttp3.sse.EventSource;
+import okhttp3.sse.EventSourceListener;
 import org.apache.commons.math3.linear.ArrayRealVector;
 import org.apache.commons.math3.linear.RealVector;
 import org.apache.http.HttpResponse;
@@ -31,10 +37,12 @@ import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.ssl.SSLContexts;
 import org.apache.http.util.EntityUtils;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import run.mone.openai.net.FakeDnsResolver;
 import run.mone.openai.net.MyConnectionSocketFactory;
 import run.mone.openai.net.MySSLConnectionSocketFactory;
 
+import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
@@ -174,6 +182,72 @@ public class OpenaiCall {
      */
     public static String call(String apiKey, String proxy, String context, String prompt) {
         return call(apiKey, proxy, context, prompt, 0.2f);
+    }
+
+    public static void callStream(String apiKey, String openApiHost, String context, String[] prompt, StreamListener listener) {
+        callStream(apiKey, openApiHost, context, prompt, listener, ReqConfig.builder().maxTokens(4096).build());
+    }
+
+    public static String editor(String apiKey, Edit edit) {
+        OpenAiClient client = new OpenAiClient(apiKey);
+        EditResponse res = client.edit(edit);
+        return res.getChoices()[0].getText();
+    }
+
+    public static void callStream(String apiKey, String openApiHost, String context, String[] prompt, StreamListener listener, ReqConfig config) {
+        OpenAiStreamClient client = new OpenAiStreamClient(apiKey, 50, 50, 50);
+
+        if (null != openApiHost) {
+            try {
+                Field field = client.getClass().getDeclaredField("apiHost");
+                field.setAccessible(true);
+                field.set(client, openApiHost);
+            } catch (NoSuchFieldException | IllegalAccessException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        ChatCompletion.ChatCompletionBuilder builder = ChatCompletion.builder()
+                .messages(Lists.newArrayList(Message.builder().role(Message.Role.USER)
+                        .content(String.format(context, prompt)).build()));
+
+        if (config.getMaxTokens() > 0) {
+            builder.maxTokens(config.getMaxTokens());
+        }
+        builder.model(config.getModel());
+        builder.temperature(config.getTemperature());
+
+        ChatCompletion completion = builder.build();
+        client.streamChatCompletion(completion, new EventSourceListener() {
+
+            @Override
+            public void onOpen(EventSource eventSource, Response response) {
+                listener.begin();
+            }
+
+            @Override
+            public void onEvent(EventSource eventSource, @Nullable String id, @Nullable String type, String str) {
+                String data = parse(str);
+                listener.onEvent(data);
+            }
+
+            @Override
+            public void onClosed(EventSource eventSource) {
+                listener.end();
+            }
+        });
+    }
+
+
+    private static String parse(String data) {
+        if (data.equals("[DONE]")) {
+            return "";
+        }
+        String obj = JSON.parseObject(data).getJSONArray("choices").getJSONObject(0).getJSONObject("delta").getString("content");
+        if (null != obj) {
+            return obj;
+        }
+        return "";
     }
 
 
