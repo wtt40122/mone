@@ -6,6 +6,6 @@ package com.xiaomi.mone.log.agent.channel.mark;
  * @description
  * @date 2023/5/8 10:55
  */
-public interface FileUniqueMark {
+public interface FileUniqueMark<T> {
     String getFileUniqueMark(String filePath);
 }

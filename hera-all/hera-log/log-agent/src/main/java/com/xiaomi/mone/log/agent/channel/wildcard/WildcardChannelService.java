@@ -11,6 +11,10 @@ import com.xiaomi.mone.log.agent.channel.file.MonitorFile;
 import com.xiaomi.mone.log.agent.channel.mark.FileUniqueMark;
 import com.xiaomi.mone.log.agent.channel.memory.AgentMemoryService;
 import com.xiaomi.mone.log.agent.channel.memory.ChannelMemory;
+import com.xiaomi.mone.log.agent.channel.memory.UnixFileNode;
+import com.xiaomi.mone.log.agent.channel.wildcard.listen.FileChangeListener;
+import com.xiaomi.mone.log.agent.channel.wildcard.listen.FileChangeMonitor;
+import com.xiaomi.mone.log.agent.channel.wildcard.listen.FileChangeObserver;
 import com.xiaomi.mone.log.agent.channel.wildcard.symbol.FileSymbol;
 import com.xiaomi.mone.log.agent.common.ChannelUtil;
 import com.xiaomi.mone.log.agent.common.ExecutorUtil;
@@ -27,9 +31,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -57,6 +65,9 @@ public class WildcardChannelService implements ChannelService {
 
     private ChannelMemory channelMemory;
 
+    private String monitorDirectory;
+    private String logPattern;
+
     private byte[] lock = new byte[0];
     private Map<String, FileSymbol> uniqueFileMap = new ConcurrentHashMap<>();
     private Map<String, String> ipPath = new ConcurrentHashMap<>();
@@ -64,6 +75,7 @@ public class WildcardChannelService implements ChannelService {
     private Map<String, Future> futureMap = new ConcurrentHashMap<>();
     private List<LineMessage> lineMessageList = new ArrayList<>();
     private Map<String, Long> lastSendTimeFileMap = new HashMap<>();
+    private List<FileChangeMonitor> monitorList = new CopyOnWriteArrayList();
     private long logCounts = 0;
 
     private volatile boolean cancel;
@@ -80,7 +92,8 @@ public class WildcardChannelService implements ChannelService {
     @Override
     public void start() {
         Input input = channelDefine.getInput();
-        String logPattern = input.getLogPattern();
+        logPattern = input.getLogPattern();
+        monitorDirectory = FileUtils.getMonitorDirectory(logPattern);
         //1，找到所有的采集地址
         List<String> filePaths = FileUtils.getFilesByWildcard(logPattern);
         //2.文件地址与文件唯一标识符的对应关系
@@ -97,8 +110,100 @@ public class WildcardChannelService implements ChannelService {
     }
 
     private void startFileMonitor() {
-        ExecutorUtil.scheduleAtFixedRate(() -> listenFileChange(),
-                10, 30, TimeUnit.SECONDS);
+        ExecutorUtil.submit(() -> monitorDirectory(new FileChangeListener() {
+
+            @Override
+            public void onFileCreate(String file, String uniqueMark) {
+                createFile(file, uniqueMark);
+            }
+
+            @Override
+            public void onFileChange(String file, String uniqueMark) {
+                changeFile(file, uniqueMark);
+            }
+
+            @Override
+            public void onFileDelete(String file, String uniqueMark) {
+                deleteFile(file, uniqueMark);
+            }
+        }));
+    }
+
+    private void monitorDirectory(FileChangeListener fileChangeListener) {
+        // 默认 遍历文件 间隔时间 5s
+        FileChangeMonitor monitor = new FileChangeMonitor(5000);
+        log.info("agent monitor files:{}", GSON.toJson(monitorDirectory));
+        FileChangeObserver observer = new FileChangeObserver(monitorDirectory);
+        observer.addListener(fileChangeListener);
+        log.info("## agent monitor file:{}, filePattern:{}", logPattern, monitorDirectory);
+        monitor.addObserver(observer);
+        try {
+            monitor.start();
+            log.info("## agent monitor filePattern:{} started", logPattern);
+            monitorList.add(monitor);
+        } catch (Exception e) {
+            log.error(String.format("agent file monitor start err,monitor filePattern:%s", logPattern), e);
+        }
+    }
+
+    private void deleteFile(String deleteFilePath, String uniqueMark) {
+        log.info("deleteFilePath:{}", deleteFilePath);
+        if (futureMap.containsKey(deleteFilePath)) {
+            futureMap.get(deleteFilePath).cancel(true);
+        }
+        if (logFileMap.containsKey(deleteFilePath)) {
+            logFileMap.get(deleteFilePath).setStop(true);
+        }
+        if (uniqueFileMap.containsKey(deleteFilePath)) {
+            uniqueFileMap.remove(deleteFilePath);
+        }
+        if (lastSendTimeFileMap.containsKey(deleteFilePath)) {
+            lastSendTimeFileMap.remove(deleteFilePath);
+        }
+    }
+
+    private void changeFile(String filePath, String uniqueMark) {
+        long lastModified = new File(filePath).lastModified();
+        if (Instant.now().toEpochMilli() - lastModified > 24 * 60 * 60 * 1000) {
+            ChannelMemory memory = memoryService.getMemory(channelDefine.getChannelId());
+            Long fileMaxPointer = memory.getFileProgressMap().get(filePath).getFileMaxPointer();
+            Long currentMaxPointer = 0L;
+            try {
+                currentMaxPointer = new RandomAccessFile(filePath, "r").length();
+            } catch (IOException e) {
+                log.error("get currentMaxPointer error,filePath:{}", filePath, e);
+            }
+            if (fileMaxPointer == currentMaxPointer) {
+                //删除当前文件
+            }
+        }
+    }
+
+    private void createFile(String createFilePath, String uniqueMark) {
+        log.info("createFilePath:{}", createFilePath);
+        //1.判断是否符合规则
+        if (FileUtils.belongToLogPath(logPattern, createFilePath)) {
+            String existsFileName = uniqueMarkExistsFileName(uniqueMark);
+            if (StringUtils.isEmpty(existsFileName)) {
+                //判断是否是切割的文件，如果是不需要,否则，需要开启读取文件
+                if (!isExclude(createFilePath)) {
+                    if (!logFileMap.containsKey(createFilePath)) {
+                        readFile("", createFilePath, channelDefine.getChannelId());
+                    }
+                }
+            } else {
+
+            }
+        }
+    }
+
+    private String uniqueMarkExistsFileName(String uniqueMark) {
+        for (Map.Entry<String, FileSymbol> fileSymbolEntry : uniqueFileMap.entrySet()) {
+            if (Objects.equals(uniqueMark, fileSymbolEntry.getValue().getFileUniqueMark())) {
+                return fileSymbolEntry.getKey();
+            }
+        }
+        return null;
     }
 
     private void listenFileChange() {
@@ -115,6 +220,10 @@ public class WildcardChannelService implements ChannelService {
             }
 
         }
+    }
+
+    private boolean isExclude(String filePath) {
+        return false;
     }
 
     private Map<String, String> getFilepathIp() {
@@ -193,11 +302,11 @@ public class WildcardChannelService implements ChannelService {
             pointer = fileProgress.getPointer();
             lineNumber = fileProgress.getCurrentRowNum();
             //比较inode值是否变化，变化则从头开始读
-            ChannelMemory.UnixFileNode memoryUnixFileNode = fileProgress.getUnixFileNode();
+            UnixFileNode memoryUnixFileNode = fileProgress.getUnixFileNode();
             if (null != memoryUnixFileNode && null != memoryUnixFileNode.getSt_ino()) {
                 log.info("memory file inode info,filePath:{},:{}", filePath, GSON.toJson(memoryUnixFileNode));
                 //获取当前文件inode信息
-                ChannelMemory.UnixFileNode currentUnixFileNode = ChannelUtil.buildUnixFileNode(filePath);
+                UnixFileNode currentUnixFileNode = ChannelUtil.buildUnixFileNode(filePath);
                 if (null != currentUnixFileNode && null != currentUnixFileNode.getSt_ino()) {
                     log.info("current file inode info,filePath:{},file node info:{}", filePath, GSON.toJson(currentUnixFileNode));
                     if (!Objects.equals(memoryUnixFileNode.getSt_ino(), currentUnixFileNode.getSt_ino())) {

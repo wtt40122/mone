@@ -25,6 +25,7 @@ import com.xiaomi.mone.file.*;
 import com.xiaomi.mone.log.agent.channel.file.MonitorFile;
 import com.xiaomi.mone.log.agent.channel.memory.AgentMemoryService;
 import com.xiaomi.mone.log.agent.channel.memory.ChannelMemory;
+import com.xiaomi.mone.log.agent.channel.memory.UnixFileNode;
 import com.xiaomi.mone.log.agent.common.ChannelUtil;
 import com.xiaomi.mone.log.agent.common.ExecutorUtil;
 import com.xiaomi.mone.log.agent.export.MsgExporter;
@@ -545,11 +546,11 @@ public class ChannelServiceImpl implements ChannelService {
             pointer = fileProgress.getPointer();
             lineNumber = fileProgress.getCurrentRowNum();
             //比较inode值是否变化，变化则从头开始读
-            ChannelMemory.UnixFileNode memoryUnixFileNode = fileProgress.getUnixFileNode();
+            UnixFileNode memoryUnixFileNode = fileProgress.getUnixFileNode();
             if (null != memoryUnixFileNode && null != memoryUnixFileNode.getSt_ino()) {
                 log.info("memory file inode info,filePath:{},:{}", filePath, gson.toJson(memoryUnixFileNode));
                 //获取当前文件inode信息
-                ChannelMemory.UnixFileNode currentUnixFileNode = ChannelUtil.buildUnixFileNode(filePath);
+                UnixFileNode currentUnixFileNode = ChannelUtil.buildUnixFileNode(filePath);
                 if (null != currentUnixFileNode && null != currentUnixFileNode.getSt_ino()) {
                     log.info("current file inode info,filePath:{},file node info:{}", filePath, gson.toJson(currentUnixFileNode));
                     if (!Objects.equals(memoryUnixFileNode.getSt_ino(), currentUnixFileNode.getSt_ino())) {

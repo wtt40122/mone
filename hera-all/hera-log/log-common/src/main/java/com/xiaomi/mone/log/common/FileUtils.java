@@ -76,4 +76,16 @@ public class FileUtils {
         }
     }
 
+    public static String getMonitorDirectory(String filePath) {
+        try {
+            return getMatchDirectory(filePath);
+        } catch (Exception e) {
+            return StringUtils.substringBeforeLast(filePath, SEPARATOR) + SEPARATOR;
+        }
+    }
+
+    public static boolean belongToLogPath(String pathWildcard, String filePath) {
+        Pattern pattern = Pattern.compile(pathWildcard);
+        return pattern.matcher(filePath).find();
+    }
 }

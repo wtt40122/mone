@@ -2,7 +2,7 @@ package com.xiaomi.mone.log.agent.common;
 
 import com.google.common.collect.Lists;
 import com.google.gson.Gson;
-import com.xiaomi.mone.log.agent.channel.memory.ChannelMemory;
+import com.xiaomi.mone.log.agent.channel.memory.UnixFileNode;
 import com.xiaomi.mone.log.common.PathUtils;
 import com.xiaomi.mone.log.utils.NetUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -106,18 +106,18 @@ public class ChannelUtil {
      * @param filePath
      * @return
      */
-    public static ChannelMemory.UnixFileNode buildUnixFileNode(String filePath) {
+    public static UnixFileNode buildUnixFileNode(String filePath) {
         try {
             BasicFileAttributes fileAttributes = Files.readAttributes(Paths.get(filePath), BasicFileAttributes.class);
             if (null != fileAttributes.fileKey()) {
-                ChannelMemory.UnixFileNode unixFileNode = GSON.fromJson(GSON.toJson(fileAttributes.fileKey()), ChannelMemory.UnixFileNode.class);
+                UnixFileNode unixFileNode = GSON.fromJson(GSON.toJson(fileAttributes.fileKey()), UnixFileNode.class);
                 log.debug("origin file path:{},fileNode unixFileNode:{}", filePath, GSON.toJson(unixFileNode));
                 return unixFileNode;
             }
         } catch (IOException e) {
             log.info("buildUnixFileNode error,filePath:{}", filePath, e);
         }
-        return new ChannelMemory.UnixFileNode();
+        return new UnixFileNode();
     }
 
 }

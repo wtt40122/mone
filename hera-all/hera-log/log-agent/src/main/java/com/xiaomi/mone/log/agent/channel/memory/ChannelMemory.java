@@ -93,9 +93,4 @@ public class ChannelMemory implements Serializable {
 
     }
 
-    @Data
-    public static class UnixFileNode {
-        private Long st_dev;
-        private Long st_ino;
-    }
 }
