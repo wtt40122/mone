@@ -20,6 +20,7 @@ import com.xiaomi.mone.log.agent.output.Output;
 import com.xiaomi.mone.log.agent.input.Input;
 import com.xiaomi.mone.log.api.enums.OperateEnum;
 import com.xiaomi.mone.log.api.model.meta.FilterConf;
+import com.xiaomi.mone.log.api.model.meta.LogPattern;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -46,7 +47,7 @@ public class ChannelDefine implements Serializable {
 
     private OperateEnum operateEnum;
 
-    private List<String> ips;
+    private List<LogPattern.IPRel> ips;
 
     /**
      * todo filter、script配置

@@ -10,7 +10,6 @@ import lombok.*;
  */
 @AllArgsConstructor
 @NoArgsConstructor
-@RequiredArgsConstructor
 @Builder
 @Data
 public class FileSymbol {

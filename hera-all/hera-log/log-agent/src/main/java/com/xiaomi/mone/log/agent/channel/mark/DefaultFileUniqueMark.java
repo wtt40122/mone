@@ -9,10 +9,13 @@ import com.xiaomi.mone.log.agent.common.ChannelUtil;
  * @description
  * @date 2023/5/8 10:56
  */
-public class DefaultFileUniqueMark implements FileUniqueMark<String> {
+public class DefaultFileUniqueMark implements FileUniqueMark {
     @Override
     public String getFileUniqueMark(String filePath) {
         UnixFileNode unixFileNode = ChannelUtil.buildUnixFileNode(filePath);
+        if (null == unixFileNode.getSt_ino()) {
+            return filePath;
+        }
         return unixFileNode.getSt_ino() + "";
     }
 }

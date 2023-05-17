@@ -22,18 +22,17 @@ import com.google.gson.Gson;
 import com.xiaomi.data.push.common.SafeRun;
 import com.xiaomi.data.push.rpc.RpcClient;
 import com.xiaomi.data.push.rpc.protocol.RemotingCommand;
-import com.xiaomi.mone.log.agent.channel.comparator.AppSimilarComparator;
-import com.xiaomi.mone.log.agent.channel.comparator.FilterSimilarComparator;
-import com.xiaomi.mone.log.agent.channel.comparator.InputSimilarComparator;
-import com.xiaomi.mone.log.agent.channel.comparator.OutputSimilarComparator;
-import com.xiaomi.mone.log.agent.channel.comparator.SimilarComparator;
+import com.xiaomi.mone.log.agent.channel.comparator.*;
 import com.xiaomi.mone.log.agent.channel.listener.DefaultFileMonitorListener;
 import com.xiaomi.mone.log.agent.channel.listener.FileMonitorListener;
 import com.xiaomi.mone.log.agent.channel.locator.ChannelDefineJsonLocator;
 import com.xiaomi.mone.log.agent.channel.locator.ChannelDefineLocator;
 import com.xiaomi.mone.log.agent.channel.locator.ChannelDefineRpcLocator;
+import com.xiaomi.mone.log.agent.channel.mark.DefaultFileUniqueMark;
+import com.xiaomi.mone.log.agent.channel.mark.FileUniqueMark;
 import com.xiaomi.mone.log.agent.channel.memory.AgentMemoryService;
 import com.xiaomi.mone.log.agent.channel.memory.AgentMemoryServiceImpl;
+import com.xiaomi.mone.log.agent.channel.wildcard.WildcardChannelService;
 import com.xiaomi.mone.log.agent.common.ExecutorUtil;
 import com.xiaomi.mone.log.agent.export.MsgExporter;
 import com.xiaomi.mone.log.agent.factory.OutPutServiceFactory;
@@ -43,6 +42,7 @@ import com.xiaomi.mone.log.agent.output.Output;
 import com.xiaomi.mone.log.api.enums.OperateEnum;
 import com.xiaomi.mone.log.api.model.vo.UpdateLogProcessCmd;
 import com.xiaomi.mone.log.common.Constant;
+import com.xiaomi.mone.log.common.FileUtils;
 import com.xiaomi.mone.log.utils.NetUtil;
 import com.xiaomi.youpin.docean.Ioc;
 import com.xiaomi.youpin.docean.anno.Service;
@@ -72,20 +72,18 @@ import static com.xiaomi.mone.log.common.Constant.GSON;
 @Slf4j
 public class ChannelEngine {
 
-    /**
-     * 按nameSrvAddr 初始化MQProducer
-     */
-    //private ConcurrentHashMap<String, TalosProducer> talosProducerMap;
-
     private AgentMemoryService agentMemoryService;
 
     private ChannelDefineLocator channelDefineLocator;
+
+    private FileUniqueMark fileUniqueMark;
     /**
      * 服务启动时全量拉取的配置
      */
     private List<ChannelDefine> channelDefineList = Lists.newArrayList();
 
     private volatile List<ChannelService> channelServiceList = Lists.newArrayList();
+
     /**
      * 文件监听器
      */
@@ -103,13 +101,13 @@ public class ChannelEngine {
         try {
             Config config = Ioc.ins().getBean(Config.class.getName());
             String memoryBasePath = config.get("agent.memory.path", AgentMemoryService.DEFAULT_BASE_PATH);
-            //talosProducerMap = new ConcurrentHashMap<>(512);
 
             channelDefineLocator = getChannelDefineLocator(config);
             channelDefineList = new CopyOnWriteArrayList<>(channelDefineLocator.getChannelDefine());
             log.info("current agent all config meta:{}", gson.toJson(channelDefineList));
             agentMemoryService = new AgentMemoryServiceImpl(memoryBasePath);
             fileMonitorListener = new DefaultFileMonitorListener();
+            fileUniqueMark = new DefaultFileUniqueMark();
 
             log.info("query channelDefineList:{}", gson.toJson(channelDefineList));
             channelServiceList = channelDefineList.stream()
@@ -119,7 +117,7 @@ public class ChannelEngine {
                             failedChannelId.add(channelDefine.getChannelId());
                         }
                         return channelService;
-                    }).filter(channelService -> null != channelService)
+                    }).filter(Objects::nonNull)
                     .collect(Collectors.toList());
             // 删除失败的channel
             deleteFailedChannel(failedChannelId, this.channelDefineList, this.channelServiceList);
@@ -173,7 +171,7 @@ public class ChannelEngine {
                 fileMonitorListener.addChannelService(realChannelService);
                 successChannelIds.add(realChannelService.getChannelId());
             } catch (Exception e) {
-                Long channelId = ((ChannelServiceImpl) channelService).getChannelId();
+                Long channelId = channelService.getChannelId();
                 failedChannelIds.add(channelId);
                 log.error("start channel exception,channelId:{}", channelId, e);
             }
@@ -187,7 +185,7 @@ public class ChannelEngine {
             //处理从当前队列中摘掉
             for (Long delChannelId : failedChannelId) {
                 defineList.removeIf(channelDefine -> Objects.equals(delChannelId, channelDefine.getChannelId()));
-                serviceList.removeIf(channelService -> Objects.equals(delChannelId, ((ChannelServiceImpl) channelService).getChannelId()));
+                serviceList.removeIf(channelService -> Objects.equals(delChannelId, channelService.getChannelId()));
             }
         }
     }
@@ -221,12 +219,19 @@ public class ChannelEngine {
             if (null == agentMemoryService) {
                 agentMemoryService = new AgentMemoryServiceImpl(com.xiaomi.mone.log.common.Config.ins().get("agent.memory.path", AgentMemoryService.DEFAULT_BASE_PATH));
             }
-            ChannelService channelService = new ChannelServiceImpl(exporter, agentMemoryService, channelDefine, filterChain);
+            ChannelService channelService = buildChannelService(exporter, channelDefine, filterChain);
             return channelService;
         } catch (Throwable e) {
             log.error("channelServiceTrans exception, channelDefine:{}, exception:{}", gson.toJson(channelDefine), e);
         }
         return null;
+    }
+
+    private ChannelService buildChannelService(MsgExporter exporter, ChannelDefine channelDefine, FilterChain filterChain) {
+        if (channelDefine.getInput().getLogPattern().contains(FileUtils.getPATH_WILDCARD())) {
+            return new WildcardChannelService(channelDefine, exporter, filterChain, fileUniqueMark, agentMemoryService);
+        }
+        return new ChannelServiceImpl(exporter, agentMemoryService, channelDefine, filterChain);
     }
 
     private void preCheckChannelDefine(ChannelDefine channelDefine) {

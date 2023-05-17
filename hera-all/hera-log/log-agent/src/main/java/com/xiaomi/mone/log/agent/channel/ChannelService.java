@@ -86,4 +86,6 @@ public interface ChannelService extends Closeable {
      * openteltry日志多文件结束clean
      */
     void delayDeletionFinishedFile();
+
+    Long getChannelId();
 }

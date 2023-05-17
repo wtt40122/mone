@@ -1,6 +1,7 @@
 package com.xiaomi.mone.log.common;
 
 import cn.hutool.core.io.FileUtil;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
@@ -20,6 +21,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class FileUtils {
 
+    @Getter
     private static final String PATH_WILDCARD = "*";
     //    private static final String SEPARATOR = FileSystems.getDefault().getSeparator();
     private static final String SEPARATOR = "/";

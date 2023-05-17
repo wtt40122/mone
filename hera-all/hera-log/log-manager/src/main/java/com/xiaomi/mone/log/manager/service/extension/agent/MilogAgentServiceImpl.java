@@ -319,7 +319,7 @@ public class MilogAgentServiceImpl implements MilogAgentService {
             return milogLogtailDos.stream().map(milogLogtailDo -> {
                 log.info("assemble data:{}", gson.toJson(milogAppId));
                 LogPattern logPattern = generateLogPattern(milogLogtailDo);
-                logPattern.setIps(Lists.newArrayList(agentIp));
+                logPattern.setIps(Lists.newArrayList(LogPattern.IPRel.builder().ip(agentIp).build()));
                 LogPathMapping logPathMapping = logPathMappingFactory.queryLogPathMappingByAppType(type);
                 HeraEnvIpService heraEnvIpService = heraEnvIpServiceFactory.getHeraEnvIpServiceByAppType(type);
                 try {

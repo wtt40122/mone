@@ -3,7 +3,7 @@ package com.xiaomi.mone.log.agent.common;
 import com.google.common.collect.Lists;
 import com.google.gson.Gson;
 import com.xiaomi.mone.log.agent.channel.memory.UnixFileNode;
-import com.xiaomi.mone.log.common.PathUtils;
+import com.xiaomi.mone.log.api.model.meta.LogPattern;
 import com.xiaomi.mone.log.utils.NetUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -54,18 +54,22 @@ public class ChannelUtil {
         return ip;
     }
 
-    public static void buildConnectionBetweenAppIp(String logPattern, Map<String, String> ipPath, List<String> ips, boolean collectOnce) {
-        List<String> directoryWithMultiple = PathUtils.findDirectoryWithMultiple(logPattern, collectOnce);
-        ipPath.clear();
-        String ip;
-        for (int i = 0; i < directoryWithMultiple.size(); i++) {
-            try {
-                ip = ips.get(i);
-            } catch (Exception e) {
-                ip = NetUtil.getLocalIp();
-            }
-            ipPath.put(directoryWithMultiple.get(i), ip);
+    public static String queryCurrentCorrectIp(List<LogPattern.IPRel> ips, String filePath) {
+        if (ips.size() == 1) {
+            return ips.get(ips.size() - 1).getIp();
         }
+        String ip = "";
+        try {
+            if (!ips.isEmpty()) {
+                ip = ips.stream()
+                        .filter(data -> filePath.contains(data.getKey()))
+                        .findFirst().get()
+                        .getIp();
+            }
+        } catch (Exception e) {
+            ip = NetUtil.getLocalIp();
+        }
+        return ip;
     }
 
     public static List<String> buildLogExpressList(String logPattern) {

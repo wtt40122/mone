@@ -34,7 +34,7 @@ public class FileChangeMonitor implements Runnable {
         this.threadFactory = threadFactory;
     }
 
-    public synchronized void stop() throws Exception {
+    public synchronized void stop() {
         stop(interval);
     }
 
@@ -56,7 +56,7 @@ public class FileChangeMonitor implements Runnable {
         }
     }
 
-    public synchronized void stop(long stopInterval) throws Exception {
+    public synchronized void stop(long stopInterval) {
         if (running == false) {
             throw new IllegalStateException("Monitor is not running");
         }

@@ -73,7 +73,7 @@ public interface AgentMemoryService {
     void cleanChannelMemoryContent(Long channelId, List<String> filePaths);
 
     /**
-     * 清理已经删除的tail 内存文件
+     * 清理超过10天的缓存文件,参数为空,该机器上全量清理
      *
      * @param channelIds 全量chanelIds集合
      */

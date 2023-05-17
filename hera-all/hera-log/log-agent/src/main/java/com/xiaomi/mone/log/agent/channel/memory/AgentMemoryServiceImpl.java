@@ -34,6 +34,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +42,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+
+import static com.xiaomi.mone.log.common.Constant.GSON;
 
 /**
  * @author shanwb
@@ -64,8 +67,8 @@ public class AgentMemoryServiceImpl implements AgentMemoryService {
     public AgentMemoryServiceImpl(String basePath) {
         this.basePath = basePath;
         initFolder(this.basePath + MEMORY_DIR);
-//        这么清理有问题，不能清理
-//        cleanMemoryHistoryFile(channelIds);
+        //清理文件，超过10天的被clean
+        cleanMemoryHistoryFile(Lists.newArrayList());
         initChannelMemory();
         //30s定期刷盘
         initFlushTask(this);
@@ -211,7 +214,8 @@ public class AgentMemoryServiceImpl implements AgentMemoryService {
             log.info("all channelIds:{}", gson.toJson(channelIds));
             List<String> channelIdList = channelIds.stream().map(String::valueOf).collect(Collectors.toList());
             List<File> files = FileUtil.loopFiles(this.basePath + MEMORY_DIR);
-            Map<String, File> fileMap = files.stream()
+            List<File> filterFiles = filterFileChannel(files, channelIdList);
+            Map<String, File> fileMap = filterFiles.stream()
                     .collect(Collectors
                             .toMap(File::getName, Function.identity(), (file, file2) -> file2));
             for (String fileName : fileMap.keySet()) {
@@ -219,9 +223,34 @@ public class AgentMemoryServiceImpl implements AgentMemoryService {
                     fileMap.get(fileName).delete();
                 }
             }
+            for (File file : filterFiles) {
+                if (file.getName().startsWith(CHANNEL_FILE_PREFIX)) {
+                    ReadResult readResult = FileUtils.readFile(file.getAbsolutePath(), 0, 0);
+                    List<String> list = readResult.getLines();
+                    if (CollectionUtils.isNotEmpty(list)) {
+                        String channel = list.get(0);
+                        ChannelMemory channelMemory = gson.fromJson(channel, ChannelMemory.class);
+                        if (Instant.now().toEpochMilli() - channelMemory.getCurrentTime() >
+                                10 * 24 * 60 * 60 * 1000) {
+                            log.warn("delete memory file :{},channelMemory:{}", file.getName(), GSON.toJson(channelMemory));
+                            file.delete();
+                        }
+                    }
+                }
+            }
         } catch (Exception e) {
             log.error("cleanMemoryHistoryFile error,channelIds:{}", gson.toJson(channelIds), e);
         }
+    }
+
+    private List<File> filterFileChannel(List<File> files, List<String> channelIdList) {
+        if (CollectionUtils.isEmpty(channelIdList)) {
+            return files;
+        }
+        List<String> fileNameList = channelIdList.stream().map(channelId -> String.format("%s%s", CHANNEL_FILE_PREFIX, channelId)).collect(Collectors.toList());
+        return files.stream()
+                .filter(file -> fileNameList.contains(file.getName()))
+                .collect(Collectors.toList());
     }
 
     /**
