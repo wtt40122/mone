@@ -1,9 +1,8 @@
 package com.xiaomi.mone.log.agent.channel.wildcard.listen;
 
-import cn.hutool.core.io.FileUtil;
 import com.xiaomi.mone.log.agent.channel.mark.DefaultFileUniqueMark;
 import com.xiaomi.mone.log.agent.channel.mark.FileUniqueMark;
-import com.xiaomi.mone.log.agent.common.ChannelUtil;
+import com.xiaomi.mone.log.common.FileUtils;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -36,9 +35,9 @@ public class FileChangeObserver implements Serializable {
 
     private void buildFileInodeMap() {
         fileINodeMap.clear();
-        List<String> files = FileUtil.listFileNames(monitorFileDirectory);
+        List<String> files = FileUtils.listFilePathNames(monitorFileDirectory);
         for (String file : files) {
-            fileINodeMap.put(file, ChannelUtil.buildUnixFileNode(file).getSt_ino() + "");
+            fileINodeMap.put(file, fileUniqueMark.getFileUniqueMark(file));
         }
     }
 
@@ -57,7 +56,7 @@ public class FileChangeObserver implements Serializable {
 
     public void checkAndNotify() {
         //查询当前目录下的inode是否新增、删除
-        List<String> files = FileUtil.listFileNames(monitorFileDirectory);
+        List<String> files = FileUtils.listFilePathNames(monitorFileDirectory);
         Collection<String> fileUniqueList = fileINodeMap.values();
         List<String> uniqueMarkList = new ArrayList<>();
         for (String file : files) {

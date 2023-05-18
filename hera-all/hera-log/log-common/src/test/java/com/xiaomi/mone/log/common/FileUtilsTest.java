@@ -53,4 +53,12 @@ public class FileUtilsTest {
         String monitorDirectory2 = FileUtils.getMonitorDirectory(logPattern2);
         Assert.assertEquals("/home/work/server/", monitorDirectory2);
     }
+
+    @Test
+    public void test05(){
+        String logPattern = "/home/work/*/*.log";
+        String filePath = "/home/work/test/trace.log";
+        boolean b = FileUtils.belongToLogPath(logPattern, filePath);
+        Assert.assertTrue(b);
+    }
 }

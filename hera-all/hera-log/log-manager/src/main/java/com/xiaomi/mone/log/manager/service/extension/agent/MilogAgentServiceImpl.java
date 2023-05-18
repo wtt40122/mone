@@ -319,13 +319,14 @@ public class MilogAgentServiceImpl implements MilogAgentService {
             return milogLogtailDos.stream().map(milogLogtailDo -> {
                 log.info("assemble data:{}", gson.toJson(milogAppId));
                 LogPattern logPattern = generateLogPattern(milogLogtailDo);
-                logPattern.setIps(Lists.newArrayList(LogPattern.IPRel.builder().ip(agentIp).build()));
+                logPattern.setIps(Lists.newArrayList(agentIp));
+                logPattern.setIpDirectoryRel(Lists.newArrayList(LogPattern.IPRel.builder().ip(agentIp).build()));
                 LogPathMapping logPathMapping = logPathMappingFactory.queryLogPathMappingByAppType(type);
                 HeraEnvIpService heraEnvIpService = heraEnvIpServiceFactory.getHeraEnvIpServiceByAppType(type);
                 try {
                     logPattern.setLogPattern(logPathMapping.getLogPath(milogLogtailDo.getLogPath(), null));
                     logPattern.setLogSplitExpress(logPathMapping.getLogPath(milogLogtailDo.getLogSplitExpress(), null));
-                    logPattern.setIps(heraEnvIpService.queryActualIps(milogLogtailDo.getIps(), agentIp));
+                    logPattern.setIpDirectoryRel(heraEnvIpService.queryActualIps(milogLogtailDo.getIps(), agentIp));
                 } catch (Exception e) {
                     log.error("assemble log path data error:", e);
                 }

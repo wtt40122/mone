@@ -164,12 +164,13 @@ public class ChannelEngine {
         List<Long> successChannelIds = Lists.newArrayList();
         // 启动channel
         for (ChannelService channelService : channelServiceList) {
-            ChannelServiceImpl realChannelService = (ChannelServiceImpl) channelService;
-            log.info("realChannelService,id:{}", realChannelService.getChannelId());
+            log.info("realChannelService,id:{}", channelService.getChannelId());
             try {
                 channelService.start();
-                fileMonitorListener.addChannelService(realChannelService);
-                successChannelIds.add(realChannelService.getChannelId());
+                if (channelService instanceof ChannelServiceImpl) {
+                    fileMonitorListener.addChannelService(channelService);
+                }
+                successChannelIds.add(channelService.getChannelId());
             } catch (Exception e) {
                 Long channelId = channelService.getChannelId();
                 failedChannelIds.add(channelId);

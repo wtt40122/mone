@@ -38,10 +38,13 @@ public class LogPattern implements Serializable {
     private Long logtailId;
 
     private String tailName;
+
+    private List<String> ips;
+
     /**
-     * ip信息，k8s中一个node中可能有多个pod,导致一个tail有多个ip，因此ip顺序必须和路径的顺序对应
+     * ip和目录对应关系
      */
-    private List<IPRel> ips;
+    private List<LogPattern.IPRel> ipDirectoryRel;
 
     /**
      * LogTypeEnum.name()，
@@ -90,7 +93,7 @@ public class LogPattern implements Serializable {
     @AllArgsConstructor
     @NoArgsConstructor
     @Builder
-    public class IPRel implements Serializable {
+    public static class IPRel implements Serializable {
         private String key = File.separator;
         private String ip;
     }

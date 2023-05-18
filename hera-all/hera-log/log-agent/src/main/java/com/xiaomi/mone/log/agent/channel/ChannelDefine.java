@@ -16,8 +16,8 @@
 
 package com.xiaomi.mone.log.agent.channel;
 
-import com.xiaomi.mone.log.agent.output.Output;
 import com.xiaomi.mone.log.agent.input.Input;
+import com.xiaomi.mone.log.agent.output.Output;
 import com.xiaomi.mone.log.api.enums.OperateEnum;
 import com.xiaomi.mone.log.api.model.meta.FilterConf;
 import com.xiaomi.mone.log.api.model.meta.LogPattern;
@@ -47,7 +47,11 @@ public class ChannelDefine implements Serializable {
 
     private OperateEnum operateEnum;
 
-    private List<LogPattern.IPRel> ips;
+    private List<String> ips;
+    /**
+     * ip和目录对应关系
+     */
+    private List<LogPattern.IPRel> ipDirectoryRel;
 
     /**
      * todo filter、script配置

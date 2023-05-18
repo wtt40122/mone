@@ -1,6 +1,8 @@
 package com.xiaomi.mone.log.common;
 
+import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.io.FileUtil;
+import com.google.common.collect.Lists;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -9,6 +11,7 @@ import java.io.File;
 import java.io.FileFilter;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -23,6 +26,8 @@ public class FileUtils {
 
     @Getter
     private static final String PATH_WILDCARD = "*";
+
+    private static final String MATH_PATH_WILDCARD = ".*";
     //    private static final String SEPARATOR = FileSystems.getDefault().getSeparator();
     private static final String SEPARATOR = "/";
 
@@ -61,8 +66,11 @@ public class FileUtils {
     }
 
     private static FileFilter getFileFilter(String file) {
-        Pattern pattern = escapeWildcard(file);
-        return pathFile -> pattern.matcher(pathFile.getName()).matches();
+        if (file.contains(PATH_WILDCARD)) {
+            Pattern pattern = escapeWildcard(file);
+            return pathFile -> pattern.matcher(pathFile.getName()).matches();
+        }
+        return pathFile -> Objects.equals(pathFile.getName(), file);
     }
 
     private static Pattern escapeWildcard(String str) {
@@ -87,7 +95,21 @@ public class FileUtils {
     }
 
     public static boolean belongToLogPath(String pathWildcard, String filePath) {
+        pathWildcard = StringUtils.replace(pathWildcard, PATH_WILDCARD, MATH_PATH_WILDCARD);
         Pattern pattern = Pattern.compile(pathWildcard);
         return pattern.matcher(filePath).find();
     }
+
+    public static List<String> listFilePathNames(String path) {
+        List<String> files = FileUtil.listFileNames(path);
+        if (!path.endsWith(SEPARATOR)) {
+            path = String.format("%s%s", path, SEPARATOR);
+        }
+        if (CollectionUtil.isNotEmpty(files)) {
+            String finalPath = path;
+            return files.stream().map(name -> String.format("%s%s", finalPath, name)).collect(Collectors.toList());
+        }
+        return Lists.newArrayList();
+    }
+
 }

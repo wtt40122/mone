@@ -215,14 +215,6 @@ public class AgentMemoryServiceImpl implements AgentMemoryService {
             List<String> channelIdList = channelIds.stream().map(String::valueOf).collect(Collectors.toList());
             List<File> files = FileUtil.loopFiles(this.basePath + MEMORY_DIR);
             List<File> filterFiles = filterFileChannel(files, channelIdList);
-            Map<String, File> fileMap = filterFiles.stream()
-                    .collect(Collectors
-                            .toMap(File::getName, Function.identity(), (file, file2) -> file2));
-            for (String fileName : fileMap.keySet()) {
-                if (!channelIdList.contains(StringUtils.substringAfter(fileName, CHANNEL_FILE_PREFIX))) {
-                    fileMap.get(fileName).delete();
-                }
-            }
             for (File file : filterFiles) {
                 if (file.getName().startsWith(CHANNEL_FILE_PREFIX)) {
                     ReadResult readResult = FileUtils.readFile(file.getAbsolutePath(), 0, 0);
