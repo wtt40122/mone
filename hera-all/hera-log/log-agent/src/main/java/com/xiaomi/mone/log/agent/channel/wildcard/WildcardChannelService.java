@@ -38,6 +38,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static com.xiaomi.mone.log.common.Constant.GSON;
@@ -80,11 +81,11 @@ public class WildcardChannelService implements ChannelService {
 
     private ScheduledFuture<?> scheduledFuture;
 
-    private ScheduledFuture<?> lastFileLineScheduledFuture;
+    private Map<String, ScheduledFuture<?>> lastFileLineScheduledFutureMap = new ConcurrentHashMap<>();
 
     private String instanceId = UUID.randomUUID().toString();
 
-    private volatile boolean cancel;
+    private Pattern patternExpress;
 
     public WildcardChannelService(ChannelDefine channelDefine, MsgExporter msgExporter, FilterChain chain, FileUniqueMark fileUniqueMark, AgentMemoryService memoryService) {
         this.channelDefine = channelDefine;
@@ -103,7 +104,7 @@ public class WildcardChannelService implements ChannelService {
         //1，找到所有的采集地址
         List<String> filePaths = FileUtils.getFilesByWildcard(logPattern);
         //2.文件地址与文件唯一标识符的对应关系
-        buildFileUniqueMap(filePaths);
+        buildFileUniqueMap(filePaths, input.getLogSplitExpress());
         //3.获取读取进度(断线重连)
         channelMemoryObtain(channelDefine, filePaths);
         //4.开始采集
@@ -141,17 +142,21 @@ public class WildcardChannelService implements ChannelService {
     }
 
     private void deleteFile(String deleteFilePath, String uniqueMark) {
-        log.info("deleteFilePath:{}", deleteFilePath);
-        if (futureMap.containsKey(deleteFilePath)) {
-            futureMap.get(deleteFilePath).cancel(true);
+        log.info("deleteFilePath:{},uniqueMark:{}", deleteFilePath, uniqueMark);
+        if (futureMap.containsKey(uniqueMark)) {
+            futureMap.get(uniqueMark).cancel(true);
         }
-        if (logFileMap.containsKey(deleteFilePath)) {
-            logFileMap.get(deleteFilePath).setStop(true);
+        if (logFileMap.containsKey(uniqueMark)) {
+            logFileMap.get(uniqueMark).setStop(true);
         }
-        if (uniqueFileMap.containsKey(deleteFilePath)) {
-            uniqueFileMap.remove(deleteFilePath);
+        if (uniqueFileMap.containsKey(uniqueMark)) {
+            uniqueFileMap.remove(uniqueMark);
+        }
+        if (lastFileLineScheduledFutureMap.containsKey(uniqueMark)) {
+            lastFileLineScheduledFutureMap.get(uniqueMark).cancel(false);
         }
     }
+
 
     private void monitorDirectory(FileChangeListener fileChangeListener) {
         // 默认 遍历文件 间隔时间 5s
@@ -163,17 +168,22 @@ public class WildcardChannelService implements ChannelService {
         monitor.addObserver(observer);
         try {
             monitor.start();
-            log.info("## agent monitor filePattern:{} started", logPattern);
+            log.info("## agent monitor filePattern:{} started，monitorDirectory：{}", logPattern, monitorDirectory);
             monitorList.add(monitor);
         } catch (Exception e) {
-            log.error(String.format("agent file monitor start err,monitor filePattern:%s", logPattern), e);
+            log.error(String.format("agent file monitor start err,monitor filePattern:%s,monitorDirectory：%s", logPattern, monitorDirectory), e);
         }
     }
 
     private void changeFile(String filePath, String uniqueMark) {
         long lastModified = new File(filePath).lastModified();
         ChannelMemory memory = memoryService.getMemory(channelDefine.getChannelId());
+        if (null == memory.getFileProgressMap().get(filePath) || null == memory.getFileProgressMap().get(filePath).getFileMaxPointer()) {
+            return;
+        }
         Long fileMaxPointer = memory.getFileProgressMap().get(filePath).getFileMaxPointer();
+        String existUniqueMark = memory.getFileProgressMap().get(filePath).getUnixFileNode().getSt_ino() + "";
+
         Long currentMaxPointer = getFileMaxPointer(filePath);
         if (Instant.now().toEpochMilli() - lastModified > 24 * 60 * 60 * 1000) {
             if (fileMaxPointer == currentMaxPointer) {
@@ -182,7 +192,7 @@ public class WildcardChannelService implements ChannelService {
             }
         }
         //比较文件是否需要被重新打开
-        if (currentMaxPointer < fileMaxPointer) {
+        if (Objects.equals(uniqueMark, existUniqueMark) && currentMaxPointer < fileMaxPointer) {
             log.info("changeFile,reOpen file;{},currentMaxPointer:{},fileMaxPointer:{}", filePath, currentMaxPointer, fileMaxPointer);
             reOpen(filePath);
         }
@@ -211,22 +221,24 @@ public class WildcardChannelService implements ChannelService {
                 readFile(ChannelUtil.queryCurrentCorrectIp(channelDefine.getIpDirectoryRel(), createFilePath), createFilePath, channelDefine.getChannelId());
             }
         } else {
+            //这个情况不可能发生，新增事件不会出现这样的情况
             //如果文件uniqueMark已经存在，代表的是文件被重命名了，不用管，等待修改时被超时停止
             log.info("createFilePath -> file uniqueMark has exist,fileName:{},inode:{}", createFilePath, uniqueMark);
         }
     }
 
     private String uniqueMarkExistsFileName(String uniqueMark) {
-        for (Map.Entry<String, FileSymbol> fileSymbolEntry : uniqueFileMap.entrySet()) {
-            if (Objects.equals(uniqueMark, fileSymbolEntry.getValue().getFileUniqueMark())) {
-                return fileSymbolEntry.getKey();
-            }
+        if (uniqueFileMap.containsKey(uniqueMark)) {
+            return uniqueFileMap.get(uniqueMark).getFilePath();
         }
         return null;
     }
 
     private boolean isExclude(String filePath) {
-        return false;
+        if (null == patternExpress) {
+            return false;
+        }
+        return patternExpress.matcher(filePath).find();
     }
 
     private Map<String, String> getFilepathIp() {
@@ -248,7 +260,8 @@ public class WildcardChannelService implements ChannelService {
         }
         String usedIp = StringUtils.isBlank(ip) ? NetUtil.getLocalIp() : ip;
 
-        ReadListener listener = initFileReadListener(mLog, usedIp, filePath);
+        String uniqueMark = fileUniqueMark.getFileUniqueMark(filePath);
+        ReadListener listener = initFileReadListener(mLog, usedIp, filePath, uniqueMark);
         Map<String, ChannelMemory.FileProgress> fileProgressMap = channelMemory.getFileProgressMap();
         log.info("fileProgressMap:{}", fileProgressMap);
         LogFile logFile = getLogFile(filePath, listener, fileProgressMap);
@@ -259,7 +272,7 @@ public class WildcardChannelService implements ChannelService {
         //判断文件是否存在
         if (FileUtil.exist(filePath)) {
             log.info("start to collect file,fileName:{}", filePath);
-            logFileMap.put(filePath, logFile);
+            logFileMap.put(uniqueMark, logFile);
             Future<?> future = ExecutorUtil.submit(() -> {
                 try {
                     logFile.readLine();
@@ -267,7 +280,7 @@ public class WildcardChannelService implements ChannelService {
                     log.error("logFile read line err,channelId:{},uniqueIp:{},file:{}", channelId, usedIp, fileProgressMap, e);
                 }
             });
-            futureMap.put(filePath, future);
+            futureMap.put(uniqueMark, future);
         } else {
             log.info("file not exist,file:{}", filePath);
         }
@@ -302,6 +315,10 @@ public class WildcardChannelService implements ChannelService {
                         pointer = 0L;
                         lineNumber = 0L;
                         log.info("read file start from head,filePath:{},memory:{},current:{}", filePath, GSON.toJson(memoryUnixFileNode), GSON.toJson(currentUnixFileNode));
+                        fileProgress.setPointer(pointer);
+                        fileProgress.setFileMaxPointer(pointer);
+                        fileProgress.setCurrentRowNum(lineNumber);
+                        fileProgress.setUnixFileNode(currentUnixFileNode);
                     }
                 }
             }
@@ -309,7 +326,7 @@ public class WildcardChannelService implements ChannelService {
         return new LogFile(filePath, listener, pointer, lineNumber);
     }
 
-    private ReadListener initFileReadListener(MLog mLog, String ip, String filePath) {
+    private ReadListener initFileReadListener(MLog mLog, String ip, String filePath, String uniqueMark) {
         AtomicReference<ReadResult> readResult = new AtomicReference<>();
         ReadListener listener = new DefaultReadListener(event -> {
             readResult.set(event.getReadResult());
@@ -329,7 +346,7 @@ public class WildcardChannelService implements ChannelService {
                 }
                 if (null != l) {
                     synchronized (lock) {
-                        wrapDataToSend(l, readResult, filePath, ip, ct);
+                        wrapDataToSend(l, readResult, filePath, ip, ct, uniqueMark);
                     }
                 } else {
                     log.debug("biz log channelId:{}, not new line:{}", channelDefine.getChannelId(), l);
@@ -341,22 +358,23 @@ public class WildcardChannelService implements ChannelService {
         /**
          * 采集最后一行数据内存中超 10s 没有发送的数据
          */
-        lastFileLineScheduledFuture = ExecutorUtil.scheduleAtFixedRate(() -> {
+        ScheduledFuture<?> lastFileLineScheduledFuture = ExecutorUtil.scheduleAtFixedRate(() -> {
             Long appendTime = mLog.getAppendTime();
             if (null != appendTime && Instant.now().toEpochMilli() - appendTime > 10 * 1000) {
                 String remainMsg = mLog.takeRemainMsg2();
                 if (null != remainMsg) {
                     synchronized (lock) {
                         log.info("start send last line,pattern:{},data:{}", filePath, remainMsg);
-                        wrapDataToSend(remainMsg, readResult, filePath, ip, Instant.now().toEpochMilli());
+                        wrapDataToSend(remainMsg, readResult, filePath, ip, Instant.now().toEpochMilli(), uniqueMark);
                     }
                 }
             }
         }, 30, 30, TimeUnit.SECONDS);
+        lastFileLineScheduledFutureMap.put(uniqueMark, lastFileLineScheduledFuture);
         return listener;
     }
 
-    private void wrapDataToSend(String lineMsg, AtomicReference<ReadResult> readResult, String filePath, String localIp, Long ct) {
+    private void wrapDataToSend(String lineMsg, AtomicReference<ReadResult> readResult, String filePath, String localIp, Long ct, String uniqueMark) {
         LineMessage lineMessage = new LineMessage();
         lineMessage.setMsgBody(lineMsg);
         lineMessage.setPointer(readResult.get().getPointer());
@@ -388,8 +406,9 @@ public class WildcardChannelService implements ChannelService {
         fileProgress.setPodType(channelDefine.getPodType());
         lineMessageList.add(lineMessage);
 
-        uniqueFileMap.get(filePath).setLastSendTime(ct);
-        uniqueFileMap.get(filePath).setLineNumber(readResult.get().getLineNumber());
+        uniqueFileMap.putIfAbsent(uniqueMark, FileSymbol.builder().fileUniqueMark(uniqueMark).filePath(filePath).lastSendTime(Instant.now().toEpochMilli()).build());
+        uniqueFileMap.get(uniqueMark).setLastSendTime(ct);
+        uniqueFileMap.get(uniqueMark).setLineNumber(readResult.get().getLineNumber());
 
         int batchSize = msgExporter.batchExportSize();
         if (lineMessageList.size() > batchSize) {
@@ -420,9 +439,17 @@ public class WildcardChannelService implements ChannelService {
         }
     }
 
-    private void buildFileUniqueMap(List<String> filePaths) {
+    private void buildFileUniqueMap(List<String> filePaths, String express) {
         for (String filePath : filePaths) {
-            uniqueFileMap.put(filePath, FileSymbol.builder().fileUniqueMark(fileUniqueMark.getFileUniqueMark(filePath)).filePath(filePath).lastSendTime(Instant.now().toEpochMilli()).build());
+            String uniqueMark = fileUniqueMark.getFileUniqueMark(filePath);
+            uniqueFileMap.put(uniqueMark, FileSymbol.builder().fileUniqueMark(uniqueMark).filePath(filePath).lastSendTime(Instant.now().toEpochMilli()).build());
+        }
+        if (StringUtils.isNotEmpty(express)) {
+            try {
+                patternExpress = Pattern.compile(express);
+            } catch (Exception e) {
+                log.error("build patternExpress error,express:{}", express, e);
+            }
         }
     }
 
@@ -472,11 +499,11 @@ public class WildcardChannelService implements ChannelService {
 
         for (Iterator<Map.Entry<String, LogFile>> it = logFileMap.entrySet().iterator(); it.hasNext(); ) {
             Map.Entry<String, LogFile> entry = it.next();
-            String filePath = entry.getKey();
+            String filePath = entry.getValue().getFile();
             for (String filePrefix : filePrefixList) {
                 if (filePath.startsWith(filePrefix)) {
                     entry.getValue().setStop(true);
-                    futureMap.get(filePath).cancel(false);
+                    futureMap.get(entry.getKey()).cancel(false);
                     log.warn("channel:{} stop file:{} success", channelDefine.getChannelId(), filePath);
                     ChannelMemory.FileProgress fileProgress = fileProgressMap.get(filePath);
                     //刷新内存记录，防止agent重启，重新采集该文件
@@ -541,7 +568,7 @@ public class WildcardChannelService implements ChannelService {
     @Override
     public void reOpen(String filePath) {
         log.info("reOpen file:{}", filePath);
-        LogFile logFile = logFileMap.get(filePath);
+        LogFile logFile = logFileMap.get(fileUniqueMark.getFileUniqueMark(filePath));
         String ip = ChannelUtil.queryCurrentCorrectIp(channelDefine.getIpDirectoryRel(), filePath);
         if (null == logFile) {
             // 新增日志文件
@@ -550,7 +577,7 @@ public class WildcardChannelService implements ChannelService {
         } else {
             // 正常日志切分
             try {
-                //延迟7s切分文件, todo @shanwb 保证文件采集完再切换
+                //延迟7s切分文件
                 TimeUnit.SECONDS.sleep(7);
             } catch (InterruptedException e) {
                 e.printStackTrace();
@@ -590,8 +617,10 @@ public class WildcardChannelService implements ChannelService {
         if (null != scheduledFuture) {
             scheduledFuture.cancel(false);
         }
-        if (null != lastFileLineScheduledFuture) {
-            lastFileLineScheduledFuture.cancel(false);
+        if (null != lastFileLineScheduledFutureMap) {
+            for (Map.Entry<String, ScheduledFuture<?>> futureEntry : lastFileLineScheduledFutureMap.entrySet()) {
+                futureEntry.getValue().cancel(false);
+            }
         }
         for (Future future : futureMap.values()) {
             future.cancel(false);

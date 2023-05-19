@@ -3,6 +3,7 @@ package com.xiaomi.mone.log.agent.channel.wildcard.listen;
 import com.xiaomi.mone.log.agent.channel.mark.DefaultFileUniqueMark;
 import com.xiaomi.mone.log.agent.channel.mark.FileUniqueMark;
 import com.xiaomi.mone.log.common.FileUtils;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -18,6 +19,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * @description
  * @date 2023/5/16 15:51
  */
+@Slf4j
 public class FileChangeObserver implements Serializable {
 
     private String monitorFileDirectory;
@@ -36,6 +38,7 @@ public class FileChangeObserver implements Serializable {
     private void buildFileInodeMap() {
         fileINodeMap.clear();
         List<String> files = FileUtils.listFilePathNames(monitorFileDirectory);
+        log.info("buildFileInodeMap,fileSize:{}", files.size());
         for (String file : files) {
             fileINodeMap.put(file, fileUniqueMark.getFileUniqueMark(file));
         }
@@ -55,29 +58,33 @@ public class FileChangeObserver implements Serializable {
     }
 
     public void checkAndNotify() {
-        //查询当前目录下的inode是否新增、删除
-        List<String> files = FileUtils.listFilePathNames(monitorFileDirectory);
-        Collection<String> fileUniqueList = fileINodeMap.values();
-        List<String> uniqueMarkList = new ArrayList<>();
-        for (String file : files) {
-            String uniqueMark = fileUniqueMark.getFileUniqueMark(file);
-            uniqueMarkList.add(uniqueMark);
-            if (!fileUniqueList.contains(uniqueMark)) {
+        try {
+            //查询当前目录下的inode是否新增、删除
+            List<String> files = FileUtils.listFilePathNames(monitorFileDirectory);
+            Collection<String> fileUniqueList = fileINodeMap.values();
+            List<String> uniqueMarkList = new ArrayList<>();
+            for (String file : files) {
+                String uniqueMark = fileUniqueMark.getFileUniqueMark(file);
+                uniqueMarkList.add(uniqueMark);
+                if (!fileUniqueList.contains(uniqueMark)) {
+                    for (FileChangeListener listener : listeners) {
+                        listener.onFileCreate(file, uniqueMark);
+                    }
+                }
                 for (FileChangeListener listener : listeners) {
-                    listener.onFileCreate(file, uniqueMark);
+                    listener.onFileChange(file, uniqueMark);
                 }
             }
-            for (FileChangeListener listener : listeners) {
-                listener.onFileChange(file, uniqueMark);
-            }
-        }
-        for (Map.Entry<String, String> entry : fileINodeMap.entrySet()) {
-            if (!uniqueMarkList.contains(entry.getValue())) {
-                for (FileChangeListener listener : listeners) {
-                    listener.onFileDelete(entry.getKey(), entry.getValue());
+            for (Map.Entry<String, String> entry : fileINodeMap.entrySet()) {
+                if (!uniqueMarkList.contains(entry.getValue())) {
+                    for (FileChangeListener listener : listeners) {
+                        listener.onFileDelete(entry.getKey(), entry.getValue());
+                    }
                 }
             }
+            buildFileInodeMap();
+        } catch (Exception e) {
+            log.error("checkAndNotify error", e);
         }
-        buildFileInodeMap();
     }
 }

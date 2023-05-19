@@ -61,4 +61,12 @@ public class FileUtilsTest {
         boolean b = FileUtils.belongToLogPath(logPattern, filePath);
         Assert.assertTrue(b);
     }
+
+    @Test
+    public void test06(){
+        String path = "/home/work/log/";
+        List<String> pathNames = FileUtils.listFilePathNames(path);
+        pathNames.stream().forEach(System.out::println);
+        log.info("files size:{}", pathNames.size());
+    }
 }

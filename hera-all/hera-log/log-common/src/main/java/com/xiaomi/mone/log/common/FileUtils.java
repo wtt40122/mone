@@ -68,9 +68,9 @@ public class FileUtils {
     private static FileFilter getFileFilter(String file) {
         if (file.contains(PATH_WILDCARD)) {
             Pattern pattern = escapeWildcard(file);
-            return pathFile -> pattern.matcher(pathFile.getName()).matches();
+            return pathFile -> pattern.matcher(pathFile.getName()).matches() && !FileUtil.isSymlink(pathFile);
         }
-        return pathFile -> Objects.equals(pathFile.getName(), file);
+        return pathFile -> Objects.equals(pathFile.getName(), file) && !FileUtil.isSymlink(pathFile);
     }
 
     private static Pattern escapeWildcard(String str) {
@@ -101,13 +101,11 @@ public class FileUtils {
     }
 
     public static List<String> listFilePathNames(String path) {
-        List<String> files = FileUtil.listFileNames(path);
-        if (!path.endsWith(SEPARATOR)) {
-            path = String.format("%s%s", path, SEPARATOR);
-        }
-        if (CollectionUtil.isNotEmpty(files)) {
-            String finalPath = path;
-            return files.stream().map(name -> String.format("%s%s", finalPath, name)).collect(Collectors.toList());
+        List<File> fileList = FileUtil.loopFiles(path);
+        if (CollectionUtil.isNotEmpty(fileList)) {
+            return fileList.stream()
+                    .filter(file -> !FileUtil.isSymlink(file))
+                    .map(File::getAbsolutePath).collect(Collectors.toList());
         }
         return Lists.newArrayList();
     }
