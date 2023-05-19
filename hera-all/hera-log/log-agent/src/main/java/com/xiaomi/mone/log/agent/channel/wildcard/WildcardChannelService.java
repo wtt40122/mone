@@ -31,9 +31,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
@@ -176,36 +173,7 @@ public class WildcardChannelService implements ChannelService {
     }
 
     private void changeFile(String filePath, String uniqueMark) {
-        long lastModified = new File(filePath).lastModified();
-        ChannelMemory memory = memoryService.getMemory(channelDefine.getChannelId());
-        if (null == memory.getFileProgressMap().get(filePath) || null == memory.getFileProgressMap().get(filePath).getFileMaxPointer()) {
-            return;
-        }
-        Long fileMaxPointer = memory.getFileProgressMap().get(filePath).getFileMaxPointer();
-        String existUniqueMark = memory.getFileProgressMap().get(filePath).getUnixFileNode().getSt_ino() + "";
-
-        Long currentMaxPointer = getFileMaxPointer(filePath);
-        if (Instant.now().toEpochMilli() - lastModified > 24 * 60 * 60 * 1000) {
-            if (fileMaxPointer == currentMaxPointer) {
-                //删除当前文件
-                deleteFile(filePath, uniqueMark);
-            }
-        }
-        //比较文件是否需要被重新打开
-        if (Objects.equals(uniqueMark, existUniqueMark) && currentMaxPointer < fileMaxPointer) {
-            log.info("changeFile,reOpen file;{},currentMaxPointer:{},fileMaxPointer:{}", filePath, currentMaxPointer, fileMaxPointer);
-            reOpen(filePath);
-        }
-    }
-
-    private static Long getFileMaxPointer(String filePath) {
-        Long currentMaxPointer = 0L;
-        try {
-            currentMaxPointer = new RandomAccessFile(filePath, "r").length();
-        } catch (IOException e) {
-            log.error("get currentMaxPointer error,filePath:{}", filePath, e);
-        }
-        return currentMaxPointer;
+        //底层做了
     }
 
     private void createFile(String createFilePath, String uniqueMark) {
@@ -575,13 +543,6 @@ public class WildcardChannelService implements ChannelService {
             readFile(ip, filePath, getChannelId());
             log.info("watch new file create for chnnelId:{},ip:{},path:{}", getChannelId(), filePath, ip);
         } else {
-            // 正常日志切分
-            try {
-                //延迟7s切分文件
-                TimeUnit.SECONDS.sleep(7);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
             logFile.setReOpen(true);
             log.info("file reOpen: channelId:{},ip:{},path:{}", getChannelId(), ip, filePath);
         }
