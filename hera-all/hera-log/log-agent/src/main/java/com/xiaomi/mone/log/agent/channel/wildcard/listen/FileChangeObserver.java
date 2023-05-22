@@ -38,7 +38,7 @@ public class FileChangeObserver implements Serializable {
     private void buildFileInodeMap() {
         fileINodeMap.clear();
         List<String> files = FileUtils.listFilePathNames(monitorFileDirectory);
-        log.info("buildFileInodeMap,fileSize:{}", files.size());
+        log.debug("buildFileInodeMap,fileSize:{}", files.size());
         for (String file : files) {
             fileINodeMap.put(file, fileUniqueMark.getFileUniqueMark(file));
         }
@@ -70,9 +70,6 @@ public class FileChangeObserver implements Serializable {
                     for (FileChangeListener listener : listeners) {
                         listener.onFileCreate(file, uniqueMark);
                     }
-                }
-                for (FileChangeListener listener : listeners) {
-                    listener.onFileChange(file, uniqueMark);
                 }
             }
             for (Map.Entry<String, String> entry : fileINodeMap.entrySet()) {

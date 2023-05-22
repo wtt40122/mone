@@ -141,10 +141,10 @@ public class WildcardChannelService implements ChannelService {
     private void deleteFile(String deleteFilePath, String uniqueMark) {
         log.info("deleteFilePath:{},uniqueMark:{}", deleteFilePath, uniqueMark);
         if (futureMap.containsKey(uniqueMark)) {
-            futureMap.get(uniqueMark).cancel(true);
+            futureMap.get(uniqueMark).cancel(false);
         }
         if (logFileMap.containsKey(uniqueMark)) {
-            logFileMap.get(uniqueMark).setStop(true);
+            logFileMap.get(uniqueMark).setStop(false);
         }
         if (uniqueFileMap.containsKey(uniqueMark)) {
             uniqueFileMap.remove(uniqueMark);
@@ -181,9 +181,10 @@ public class WildcardChannelService implements ChannelService {
         //判断inode是否存在
         String existsFileName = uniqueMarkExistsFileName(uniqueMark);
         if (StringUtils.isEmpty(existsFileName)) {
-            //文件uniqueMark不存在，代表是重新创建了个文件，存在2种情况->主要看文件切割机制
+            //文件uniqueMark不存在，代表是重新创建了个文件，存在3种情况->主要看文件切割机制
             //1.过了一段时间重新增加了个文件，需要被采集
             //2.被切割出来的文件，不需要被采集
+            //3.可能是vi了新文件
             //判断是否是切割的文件，如果是不需要,否则，需要开启读取文件
             if (!isExclude(createFilePath)) {
                 readFile(ChannelUtil.queryCurrentCorrectIp(channelDefine.getIpDirectoryRel(), createFilePath), createFilePath, channelDefine.getChannelId());
@@ -209,12 +210,7 @@ public class WildcardChannelService implements ChannelService {
         return patternExpress.matcher(filePath).find();
     }
 
-    private Map<String, String> getFilepathIp() {
-        return new ConcurrentHashMap<>();
-    }
-
     private void startCollectFile(Long channelId, List<String> filePaths) {
-
         for (int i = 0; i < filePaths.size(); i++) {
             String ip = ChannelUtil.queryCurrentCorrectIp(channelDefine.getIpDirectoryRel(), filePaths.get(i));
             readFile(ip, filePaths.get(i), channelId);
@@ -472,6 +468,9 @@ public class WildcardChannelService implements ChannelService {
                 if (filePath.startsWith(filePrefix)) {
                     entry.getValue().setStop(true);
                     futureMap.get(entry.getKey()).cancel(false);
+                    if (lastFileLineScheduledFutureMap.containsKey(entry.getKey())) {
+                        lastFileLineScheduledFutureMap.get(entry.getKey()).cancel(false);
+                    }
                     log.warn("channel:{} stop file:{} success", channelDefine.getChannelId(), filePath);
                     ChannelMemory.FileProgress fileProgress = fileProgressMap.get(filePath);
                     //刷新内存记录，防止agent重启，重新采集该文件
