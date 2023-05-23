@@ -27,6 +27,7 @@ import com.xiaomi.mone.log.api.model.meta.LogPattern;
 import com.xiaomi.mone.log.api.model.msg.LineMessage;
 import com.xiaomi.mone.log.common.FileUtils;
 import com.xiaomi.mone.log.utils.NetUtil;
+import com.xiaomi.youpin.docean.common.Pair;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -186,6 +187,17 @@ public class WildcardChannelService implements ChannelService {
             //2.被切割出来的文件，不需要被采集
             //3.可能是vi了新文件
             //判断是否是切割的文件，如果是不需要,否则，需要开启读取文件
+            List<String> fileList = logFileMap.values().stream().map(LogFile::getFile).collect(Collectors.toList());
+            log.info("createFile events,fileList:{}", GSON.toJson(fileList));
+
+            Pair<String, LogFile> logFilePair = queryLogFile(createFilePath);
+            if (null != logFilePair) {
+                log.info("createFile where file uniqueMark change bug file name unchanged,uniqueMark:{},filePath:{}", uniqueMark, createFilePath);
+                //说明文件没变，只是inode变了
+                refreshLogFileClean(uniqueMark, logFilePair);
+                return;
+            }
+
             if (!isExclude(createFilePath)) {
                 readFile(ChannelUtil.queryCurrentCorrectIp(channelDefine.getIpDirectoryRel(), createFilePath), createFilePath, channelDefine.getChannelId());
             }
@@ -194,6 +206,34 @@ public class WildcardChannelService implements ChannelService {
             //如果文件uniqueMark已经存在，代表的是文件被重命名了，不用管，等待修改时被超时停止
             log.info("createFilePath -> file uniqueMark has exist,fileName:{},inode:{}", createFilePath, uniqueMark);
         }
+    }
+
+    private void refreshLogFileClean(String uniqueMark, Pair<String, LogFile> logFilePair) {
+        try {
+            logFilePair.getValue().setReFresh(true);
+            logFileMap.put(uniqueMark, logFilePair.getValue());
+            logFileMap.remove(logFilePair.getKey());
+
+            uniqueFileMap.put(uniqueMark, uniqueFileMap.get(logFilePair.getKey()));
+            uniqueFileMap.remove(logFilePair.getKey());
+
+            lastFileLineScheduledFutureMap.put(uniqueMark, lastFileLineScheduledFutureMap.get(logFilePair.getKey()));
+            lastFileLineScheduledFutureMap.remove(logFilePair.getKey());
+
+            futureMap.put(uniqueMark, futureMap.get(logFilePair.getKey()));
+            futureMap.remove(logFilePair.getKey());
+        } catch (Exception e) {
+            log.error("refreshLogFileClean error,uniqueMark:{},old:{}", uniqueMark, GSON.toJson(logFilePair), e);
+        }
+    }
+
+    private Pair<String, LogFile> queryLogFile(String filePath) {
+        for (Map.Entry<String, LogFile> fileEntry : logFileMap.entrySet()) {
+            if (Objects.equals(filePath, fileEntry.getValue().getFile())) {
+                return Pair.of(fileEntry.getKey(), fileEntry.getValue());
+            }
+        }
+        return null;
     }
 
     private String uniqueMarkExistsFileName(String uniqueMark) {
