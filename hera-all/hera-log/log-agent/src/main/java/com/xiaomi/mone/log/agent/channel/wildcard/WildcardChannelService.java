@@ -32,6 +32,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
+import java.io.RandomAccessFile;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
@@ -192,12 +193,14 @@ public class WildcardChannelService implements ChannelService {
 
             Pair<String, LogFile> logFilePair = queryLogFile(createFilePath);
             if (null != logFilePair) {
-                log.info("createFile where file uniqueMark change bug file name unchanged,uniqueMark:{},filePath:{}", uniqueMark, createFilePath);
-                //说明文件没变，只是inode变了
-                refreshLogFileClean(uniqueMark, logFilePair);
-                return;
+                long currentBeforeHashCode = queryCurrentBeforeHashCode(createFilePath);
+                if (logFilePair.getValue().getBeforePointerHashCode() == currentBeforeHashCode) {
+                    log.info("createFile where file uniqueMark change bug file name unchanged,uniqueMark:{},filePath:{}", uniqueMark, createFilePath);
+                    //说明文件没变，只是inode变了
+                    refreshLogFileClean(uniqueMark, logFilePair);
+                    return;
+                }
             }
-
             if (!isExclude(createFilePath)) {
                 readFile(ChannelUtil.queryCurrentCorrectIp(channelDefine.getIpDirectoryRel(), createFilePath), createFilePath, channelDefine.getChannelId());
             }
@@ -206,6 +209,18 @@ public class WildcardChannelService implements ChannelService {
             //如果文件uniqueMark已经存在，代表的是文件被重命名了，不用管，等待修改时被超时停止
             log.info("createFilePath -> file uniqueMark has exist,fileName:{},inode:{}", createFilePath, uniqueMark);
         }
+    }
+
+    private long queryCurrentBeforeHashCode(String filePath) {
+        try {
+            RandomAccessFile randomAccessFile = new RandomAccessFile(filePath, "r");
+            String line = randomAccessFile.readLine();
+            String hashLine = line.length() > 100 ? line.substring(0, 100) : line;
+            return hashLine.hashCode();
+        } catch (Exception e) {
+            log.error("queryCurrentBeforeHashCode error,filePath:{}", filePath, e);
+        }
+        return Long.MAX_VALUE;
     }
 
     private void refreshLogFileClean(String uniqueMark, Pair<String, LogFile> logFilePair) {

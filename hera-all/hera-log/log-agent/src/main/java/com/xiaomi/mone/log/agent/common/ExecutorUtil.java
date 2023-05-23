@@ -30,7 +30,7 @@ public class ExecutorUtil {
 
     public static ScheduledThreadPoolExecutor STP_EXECUTOR = new ScheduledThreadPoolExecutor(5, new CustomThreadFactory("ExecutorUtil-STP-Thread"));
 
-    public static ExecutorService TP_EXECUTOR = new ThreadPoolExecutor(5, 300, 30, TimeUnit.SECONDS,
+    public static ExecutorService TP_EXECUTOR = new ThreadPoolExecutor(5, 800, 30, TimeUnit.SECONDS,
             new SynchronousQueue<>(), new CustomThreadFactory("ExecutorUtil-Thread"));
 
     public static ScheduledFuture<?> scheduleAtFixedRate(Runnable command,
