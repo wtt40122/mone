@@ -50,32 +50,19 @@ public class LogProcessor implements NettyRequestProcessor {
         RemotingCommand response = RemotingCommand.createResponseCommand(LogCmd.logRes);
         response.setBody("ok".getBytes());
         log.info("【config change】receive data：{}", GSON.toJson(req));
-        metaConfigEffect(req);
+        metaConfigReFresh(req);
         log.info("config change success");
         return response;
     }
 
-    private synchronized void metaConfigEffect(LogCollectMeta req) {
+    private synchronized void metaConfigReFresh(LogCollectMeta req) {
         ChannelEngine channelEngine = Ioc.ins().getBean(ChannelEngine.class);
         CompletableFuture<Void> reFreshFuture = CompletableFuture.runAsync(() -> {
         });
         CompletableFuture<Void> stopChannelFuture = CompletableFuture.runAsync(() -> {
         });
-        // 是否初始化完成，没完成等待30s后执行
-        int count = 0;
-        while (true) {
-            if (!channelEngine.isInitComplete()) {
-                try {
-                    TimeUnit.SECONDS.sleep(5L);
-                    ++count;
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-            if (channelEngine.isInitComplete() || count >= 20) {
-                break;
-            }
-        }
+        // 是否初始化完成，没完成等待100s后执行
+        waitFonInitCompleted(channelEngine);
         if (CollectionUtils.isNotEmpty(req.getAppLogMetaList())) {
             reFreshFuture = CompletableFuture.runAsync(() -> {
                 try {
@@ -92,6 +79,22 @@ public class LogProcessor implements NettyRequestProcessor {
             });
         }
         CompletableFuture.allOf(reFreshFuture, stopChannelFuture).join();
+    }
+
+    private static void waitFonInitCompleted(ChannelEngine channelEngine) {
+        int count = 0;
+        while (true) {
+            if (!channelEngine.isInitComplete()) {
+                try {
+                    TimeUnit.SECONDS.sleep(5L);
+                    ++count;
+                } catch (InterruptedException e) {
+                }
+            }
+            if (channelEngine.isInitComplete() || count >= 20) {
+                break;
+            }
+        }
     }
 
     @Override

@@ -86,6 +86,18 @@ public class MilogLogTailDo extends BaseCommon {
     @Comment("环境名称")
     private String envName;
 
+    @Column(value = "env_ids")
+    @ColDefine(type = ColType.MYSQL_JSON)
+    @Comment("多环境中多个Id的集合")
+    @JsonField
+    private List<Long> envIds;
+
+    @Column(value = "env_names")
+    @ColDefine(type = ColType.MYSQL_JSON)
+    @Comment("多环境中对应的环境名称")
+    @JsonField
+    private List<String> envNames;
+
     @Column(value = "machine_type")
     @ColDefine(type = ColType.INT)
     @Comment("mis应用 机器类型 0.容器 1.物理机")

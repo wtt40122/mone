@@ -37,6 +37,8 @@ public class LogTailParam {
     private String deploySpace;
     private Long envId;
     private String envName;
+    private List<Long> envIds;
+    private List<String> envNames;
     private List<String> ips;
     private String tail;
     private Integer parseType;

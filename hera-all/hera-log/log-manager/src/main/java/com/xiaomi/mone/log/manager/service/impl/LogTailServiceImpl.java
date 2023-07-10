@@ -651,6 +651,10 @@ public class LogTailServiceImpl extends BaseService implements LogTailService {
         }
         milogLogtailDo.setEnvId(logTailParam.getEnvId());
         milogLogtailDo.setEnvName(logTailParam.getEnvName());
+        // support multiple env
+        milogLogtailDo.setEnvIds(logTailParam.getEnvIds());
+        milogLogtailDo.setEnvNames(logTailParam.getEnvNames());
+
         milogLogtailDo.setMachineType(logTailParam.getMachineType());
         Integer appType = logTailParam.getAppType();
         milogLogtailDo.setAppType(appType);
@@ -689,6 +693,10 @@ public class LogTailServiceImpl extends BaseService implements LogTailService {
         logTailDTO.setAppName(milogLogtailDo.getAppName());
         logTailDTO.setEnvId(milogLogtailDo.getEnvId());
         logTailDTO.setEnvName(milogLogtailDo.getEnvName());
+
+        logTailDTO.setEnvIds(milogLogtailDo.getEnvIds());
+        logTailDTO.setEnvNames(milogLogtailDo.getEnvNames());
+
         List<String> list = milogLogtailDo.getIps();
         if (CollectionUtils.isNotEmpty(list)) {
             logTailDTO.setIps(list);

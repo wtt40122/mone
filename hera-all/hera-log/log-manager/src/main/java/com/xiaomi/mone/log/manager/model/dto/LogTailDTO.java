@@ -30,6 +30,8 @@ public class LogTailDTO {
     private Long milogAppId;
     private String appName;
     private Long envId;
+    private List<Long> envIds;
+    private List<String> envNames;
     private String envName;
     private List<String> ips;
     private String tail;
