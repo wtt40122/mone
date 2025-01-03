@@ -16,7 +16,7 @@ public class FileMonitorUtilsTest {
 
     @Test
     public void test1() throws IOException, InterruptedException {
-        new HeraFileMonitor(event -> log.info("{}", event)).reg("/tmp/e/", it -> true);
+        new HeraFileMonitor(event -> log.info("{}", event)).reg("/tmp/e/", it -> true, null, null);
         System.in.read();
     }
 

@@ -76,7 +76,17 @@ public class HeraFileMonitor {
         this.listener = listener;
     }
 
-    public void reg(String path, Predicate<String> predicate) throws IOException, InterruptedException {
+    /**
+     * 注册目录监听并初始化文件采集
+     *
+     * @param path         需要监听的目录，这个目录必须是存在的
+     * @param predicate    文件名是否符合指定的规则
+     * @param files        如果这个有值，说明已经传过来了刚开始要采集的目录，否则就用当前目录下的文件
+     * @param monitorPaths 如果这个有值，则会使用这个目录作为监控目录
+     * @throws IOException
+     * @throws InterruptedException
+     */
+    public void reg(String path, Predicate<String> predicate, List<File> files, List<String> monitorPaths) throws IOException, InterruptedException {
         Path directory = Paths.get(path);
         File f = directory.toFile();
 
@@ -84,11 +94,34 @@ public class HeraFileMonitor {
             log.info("create directory:{}", directory);
             Files.createDirectories(directory);
         }
-
-        Arrays.stream(Objects.requireNonNull(f.listFiles())).filter(it -> predicate.test(it.getPath())).forEach(this::initFile);
+        // 如果传入了初始文件列表，则使用这些文件，否则扫描当前目录下的文件
+        if (files != null && !files.isEmpty()) {
+            files.stream()
+                    .filter(it -> predicate.test(it.getPath()))
+                    .forEach(this::initFile);
+        } else {
+            Arrays.stream(Objects.requireNonNull(getFilesFromDirectory(f)))
+                    .filter(it -> predicate.test(it.getPath()))
+                    .forEach(this::initFile);
+        }
 
         WatchService watchService = FileSystems.getDefault().newWatchService();
-        directory.register(watchService, StandardWatchEventKinds.ENTRY_MODIFY, StandardWatchEventKinds.ENTRY_DELETE, StandardWatchEventKinds.ENTRY_CREATE);
+
+        // 如果传入了监控目录列表，则注册这些目录，否则注册当前目录
+        if (monitorPaths != null && !monitorPaths.isEmpty()) {
+            for (String monitorPath : monitorPaths) {
+                Path monitorDir = Paths.get(monitorPath);
+                // 注册监听事件，排除修改事件
+                monitorDir.register(watchService,
+                        StandardWatchEventKinds.ENTRY_DELETE,
+                        StandardWatchEventKinds.ENTRY_CREATE);
+            }
+        } else {
+            directory.register(watchService,
+                    StandardWatchEventKinds.ENTRY_MODIFY,
+                    StandardWatchEventKinds.ENTRY_DELETE,
+                    StandardWatchEventKinds.ENTRY_CREATE);
+        }
         while (!stop) {
             try {
 
@@ -143,6 +176,16 @@ public class HeraFileMonitor {
                 log.error("watchService error", e);
             }
         }
+    }
+
+    /**
+     * 获取目录下的所有文件
+     *
+     * @param directory 目录
+     * @return 文件数组
+     */
+    private File[] getFilesFromDirectory(File directory) {
+        return directory.listFiles();
     }
 
     private ReentrantLock lock = new ReentrantLock();

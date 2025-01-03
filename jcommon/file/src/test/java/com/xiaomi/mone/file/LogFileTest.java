@@ -23,7 +23,6 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Test;
 
-import java.io.IOException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -87,7 +86,7 @@ public class LogFileTest {
             boolean matches = pattern.matcher(it).matches();
             log.info("file:{},matches:{}", it, true);
             return true;
-        });
+        }, null, null);
         log.info("reg finish");
         System.in.read();
     }
