@@ -13,7 +13,6 @@ import org.elasticsearch.common.unit.TimeValue;
 
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-@Slf4j
 public class EsProcessor {
 
     private RestHighLevelClient originalClient;
